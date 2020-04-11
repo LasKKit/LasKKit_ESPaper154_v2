@@ -1,4 +1,4 @@
-/* LasKKit ESPaper154 for Weather Station. 
+/* LasKKit ESPaper154 V2 for Weather Station. 
  * Thingspeak edition
  * Read Temperature, Humidity and pressure from Thingspeak and show on E-Paper display
  * For settings see config.h
@@ -31,12 +31,13 @@
 // FreeFonts from Adafruit_GFX
 #include <Fonts/FreeMonoBold12pt7b.h>
 
-// select the display class to use, on ly one
+// select the display class to use, only one
 //GxEPD2_BW<GxEPD2_154 , GxEPD2_154::HEIGHT> display(GxEPD2_154(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEP015OC1 no longer available
-//GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS=D8*/ 5, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 12)); // GDEH0154D67
+GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEH0154D67
+
 // 3-color e-papers
-//GxEPD2_3C<GxEPD2_154c, GxEPD2_154c::HEIGHT> display(GxEPD2_154c(/*CS=D8*/ 5, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 12)); //old
-GxEPD2_3C<GxEPD2_154c, GxEPD2_154c::HEIGHT> display(GxEPD2_154c(/*CS=D8*/ 15, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4));
+//GxEPD2_3C<GxEPD2_154c, GxEPD2_154c::HEIGHT> display(GxEPD2_154c(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4));
+//#define HAS_RED_COLOR
 
 #include <SPI.h>
 #include <OneWire.h>
@@ -48,22 +49,22 @@ GxEPD2_3C<GxEPD2_154c, GxEPD2_154c::HEIGHT> display(GxEPD2_154c(/*CS=D8*/ 15, /*
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-#if defined(_GxGDEW0154Z04_H_) || defined(_GxGDEW0213Z16_H_) || defined(_GxGDEW029Z10_H_) || defined(_GxGDEW027C44_H_) || defined(_GxGDEW042Z15_H_) || defined(_GxGDEW075Z09_H_)
-#define HAS_RED_COLOR
-#endif
-
 #define DSPIN 4
 
 OneWire oneWireDS(DSPIN);
 DallasTemperature dallas(&oneWireDS);
 WiFiClient client;
 
+IPAddress ip(10,0,0,240);       // pick your own IP outside the DHCP range of your router
+IPAddress gateway(10,0,0,138);   // watch out, these are comma's not dots
+IPAddress subnet(255,255,255,0);
+
 // Konstanty pro vykresleni dlazdic
-#define DLAZDICE_POSUN_Y 40
-#define DLAZDICE_ODSAZENI_TEXT 5
-#define DLAZDICE_ODSAZENI 10
-#define DLAZDICE_VELIKOST_X 85
-#define DLAZDICE_VELIKOST_Y 65
+#define TILE_SHIFT_Y 40
+#define TEXT_PADDING 5      // odsazeni text
+#define TILE_MARGIN 10      // odsazeni dlazdicka
+#define TILE_SIZE_X 85
+#define TILE_SIZE_Y 65
 
 #define SLEEP_SEC 1*60  // Measurement interval (seconds)
 
@@ -75,6 +76,8 @@ float temp_in;
 float d_volt = 3.7;
 int32_t wifiSignal;
 String date;
+
+unsigned int timeAwake;
 
 WiFiUDP ntpUDP;
 // Secify the time server pool and the offset, (+3600 in seconds, GMT +1 hour)
@@ -105,88 +108,87 @@ void readChannel(){
   Serial.println(temp_box);
 }
 
-
 /*
    Funkce pro ziskani rozmeru hypotetickeho vykresleneho textu
-   Pouziji ji pro vypocet pozice kurzoru pro centrovani na stred
+   Pouziji ji pro vypocet position kurzoru pro centrovani na stred
 */
-void ziskejRozmery(char text[], uint16_t* sirka, uint16_t* vyska) {
+void getDimensions(char text[], uint16_t* width, uint16_t* height) {
   int16_t  x1, y1;
-  display.getTextBounds(text, 0, 0, &x1, &y1, sirka, vyska);
+  display.getTextBounds(text, 0, 0, &x1, &y1, width, height);
 }
-void ziskejRozmery(String text, uint16_t* sirka, uint16_t* vyska) {
+void getDimensions(String text, uint16_t* width, uint16_t* height) {
   int16_t  x1, y1;
-  display.getTextBounds(text, 0, 0, &x1, &y1, sirka, vyska);
+  display.getTextBounds(text, 0, 0, &x1, &y1, width, height);
 }
 
 // Samotna funkce pro vykresleni barevne dlazdice
-void nakresliDlazdici(uint8_t pozice, char nadpis[], char hodnota[]) {
+void drawTile(uint8_t position, char title[], char value[]) {
   // Souradnie dlazdice
   uint16_t x = 0;
   uint16_t y = 0;
 
   // Souradnice dlazdice podle jedne ze ctyr moznych pozic (0 az 3)
-  switch (pozice) {
+  switch (position) {
     case 0:
-      x = DLAZDICE_ODSAZENI;
-      y = DLAZDICE_POSUN_Y;
+      x = TILE_MARGIN;
+      y = TILE_SHIFT_Y;
       break;
     case 1:
-      x = (DLAZDICE_ODSAZENI * 2) + DLAZDICE_VELIKOST_X;
-      y = DLAZDICE_POSUN_Y;
+      x = (TILE_MARGIN * 2) + TILE_SIZE_X;
+      y = TILE_SHIFT_Y;
       break;
     case 2:
-      x = DLAZDICE_ODSAZENI;
-      y = DLAZDICE_POSUN_Y + DLAZDICE_VELIKOST_Y + DLAZDICE_ODSAZENI;
+      x = TILE_MARGIN;
+      y = TILE_SHIFT_Y + TILE_SIZE_Y + TILE_MARGIN;
       break;
     case 3:
-      x = (DLAZDICE_ODSAZENI * 2) + DLAZDICE_VELIKOST_X;
-      y = DLAZDICE_POSUN_Y + DLAZDICE_VELIKOST_Y + DLAZDICE_ODSAZENI;
+      x = (TILE_MARGIN * 2) + TILE_SIZE_X;
+      y = TILE_SHIFT_Y + TILE_SIZE_Y + TILE_MARGIN;
       break;
   }
 
   // Vykresleni stinu a dlazdice
-  //display.drawRect(x + 1, y + 1, DLAZDICE_VELIKOST_X, DLAZDICE_VELIKOST_Y, GxEPD_BLACK);
+  //display.drawRect(x + 1, y + 1, TILE_SIZE_X, TILE_SIZE_Y, GxEPD_BLACK);
 
-  display.drawRect(x, y, DLAZDICE_VELIKOST_X, DLAZDICE_VELIKOST_Y, GxEPD_BLACK);
+  display.drawRect(x, y, TILE_SIZE_X, TILE_SIZE_Y, GxEPD_BLACK);
 
-  // Vycentrovani a vykresleni nadpisu dlazdice
+  // Vycentrovani a vykresleni titleu dlazdice
   display.setFont(&FreeMono9pt7b);
-  uint16_t sirka, vyska;
-  ziskejRozmery(nadpis, &sirka, &vyska);
-  display.setCursor(x + ((DLAZDICE_VELIKOST_X / 2) - (sirka / 2)),
-                    y + DLAZDICE_ODSAZENI_TEXT + vyska);
-  display.print(nadpis);
+  uint16_t width, height;
+  getDimensions(title, &width, &height);
+  display.setCursor(x + ((TILE_SIZE_X / 2) - (width / 2)),
+                    y + TEXT_PADDING + height);
+  display.print(title);
   
   // Vycentrovani a vykresleni hlavni hodnoty
   display.setFont(&FreeMonoBold12pt7b);
-  ziskejRozmery(hodnota, &sirka, &vyska);
-  display.setCursor(x + ((DLAZDICE_VELIKOST_X / 2) - (sirka / 2)),
-                    y + ((DLAZDICE_VELIKOST_Y / 2) + vyska));
+  getDimensions(value, &width, &height);
+  display.setCursor(x + ((TILE_SIZE_X / 2) - (width / 2)),
+                    y + ((TILE_SIZE_Y / 2) + height));
   
   #if defined(HAS_RED_COLOR)
   display.setTextColor(GxEPD_RED);
   #endif
 
-  display.print(hodnota);
+  display.print(value);
   display.setTextColor(GxEPD_BLACK);
 }
 
 /* Pomocne pretizene funkce pro rozliseni, jestli se jedna o blok
    s promennou celeho cisla, nebo cisla s desetinou carkou
 */
-void nakresliDlazdici(uint8_t pozice, char nadpis[], float hodnota) {
+void drawTile(uint8_t position, char title[], float value) {
   // Prevod ciselne hodnoty float na retezec
-  char strHodnota[8];
-  dtostrf(hodnota, 3, 1, strHodnota);
-  nakresliDlazdici(pozice, nadpis, strHodnota);
+  char strvalue[8];
+  dtostrf(value, 3, 1, strvalue);
+  drawTile(position, title, strvalue);
 }
 
-void nakresliDlazdici(uint8_t pozice, char nadpis[], int hodnota) {
+void drawTile(uint8_t position, char title[], int value) {
   // Prevod ciselne hodnoty int na retezec
-  char strHodnota[8];
-  itoa(hodnota, strHodnota, 10);
-  nakresliDlazdici(pozice, nadpis, strHodnota);
+  char strvalue[8];
+  itoa(value, strvalue, 10);
+  drawTile(position, title, strvalue);
 }
 
 uint8_t getWifiStrength(){
@@ -245,6 +247,7 @@ String getTime(){
 }
 
 void drawScreen() {
+  timeAwake = millis();
   display.setRotation(0);
   display.setFont(&FreeMono9pt7b);
   display.setTextColor(GxEPD_BLACK);
@@ -252,13 +255,13 @@ void drawScreen() {
   display.fillScreen(GxEPD_WHITE);
 
   // logo laskarduino
- //display.drawBitmap(laskarduino_glcd_bmp, 200/2-24, 200/2-24, 48, 48, GxEPD_BLACK, 0);
+ //display.drawBitmap(laskarduino_glcd_bmp, 200/2-24, 200/2-24, 48, 48, GxEPD_BLACK, GxEPD_WHITE);
 
   // WiFi signal
   int32_t wifiSignalMax = 4;
   int32_t offcet = 6;
   
-  display.drawBitmap(0, 0, wifi1_icon16x16, 16, 16, GxEPD_BLACK, 0);  
+  display.drawBitmap(0, 0, wifi1_icon16x16, 16, 16, GxEPD_BLACK, GxEPD_WHITE);  
   for (int32_t i = 1; i <= wifiSignalMax; i++)
       display.drawRect(i * offcet - 6 + 18, 0, 4, 13, GxEPD_BLACK);
 
@@ -266,33 +269,33 @@ void drawScreen() {
       display.fillRect(i * offcet - 6+18, 0, 4, 13, GxEPD_BLACK);
 
   // Napeti baterie meteostanice
-  uint16_t sirka, vyska;
+  uint16_t width, height;
   String meteoBateryVoltage = "";
   meteoBateryVoltage = String(m_volt,2)  + "v";
-  ziskejRozmery(meteoBateryVoltage, &sirka, &vyska);
-  display.setCursor(100 - (sirka / 2), vyska);
+  getDimensions(meteoBateryVoltage, &width, &height);
+  display.setCursor(100 - (width / 2), height);
   display.print(meteoBateryVoltage);
 
   // Napeti baterie
   uint8_t intBatteryPercentage = getIntBattery();
   switch (intBatteryPercentage) {
     case 5:
-    display.drawBitmap(200-27, 0, bat_100, 27, 16, GxEPD_BLACK, 0);
+    display.drawBitmap(200-27, 0, bat_100, 27, 16, GxEPD_BLACK, GxEPD_WHITE);
       break;
      case 4:
-    display.drawBitmap(200-27, 0, bat_80, 27, 16, GxEPD_BLACK, 0);
+    display.drawBitmap(200-27, 0, bat_80, 27, 16, GxEPD_BLACK, GxEPD_WHITE);
       break;
     case 3:
-    display.drawBitmap(200-27, 0, bat_60, 27, 16, GxEPD_BLACK, 0);
+    display.drawBitmap(200-27, 0, bat_60, 27, 16, GxEPD_BLACK, GxEPD_WHITE);
       break;
     case 2:
-    display.drawBitmap(200-27, 0, bat_40, 27, 16, GxEPD_BLACK, 0);
+    display.drawBitmap(200-27, 0, bat_40, 27, 16, GxEPD_BLACK, GxEPD_WHITE);
       break;
      case 1:
-    display.drawBitmap(200-27, 0, bat_20, 27, 16, GxEPD_BLACK, 0);
+    display.drawBitmap(200-27, 0, bat_20, 27, 16, GxEPD_BLACK, GxEPD_WHITE);
       break;
     case 0:
-    display.drawBitmap(200-27, 0, bat_0, 27, 16, GxEPD_BLACK, 0);
+    display.drawBitmap(200-27, 0, bat_0, 27, 16, GxEPD_BLACK, GxEPD_WHITE);
       break;
     default:
     break;
@@ -300,34 +303,44 @@ void drawScreen() {
 
   // datum a cas posledni aktualizace
   date = "upd:" + date;
-  ziskejRozmery(date, &sirka, &vyska);
-  display.setCursor(100 - (sirka / 2), vyska + 18);
+  getDimensions(date, &width, &height);
+  display.setCursor(100 - (width / 2), height + 18);
   display.print(date);
 
   //draw squares
-  nakresliDlazdici(0, "Tout,`C", temp);
-  nakresliDlazdici(1, "Vlh,%", humidity);
-  nakresliDlazdici(2, "Tl,hPa", pressure);
-  nakresliDlazdici(3, "Tin,`C", temp_in);
+  drawTile(0, "Tout,`C", temp);
+  drawTile(1, "Vlh,%", humidity);
+  drawTile(2, "Tl,hPa", pressure);
+  drawTile(3, "Tin,`C", temp_in);
   
   display.display(false);  // full update
+  timeAwake = millis() - timeAwake;
+  Serial.print("-Time for display update: ");  Serial.print(timeAwake); Serial.println(" ms");
 }
 
 void WiFiConnection(){
+  timeAwake = millis();
   // pripojeni k WiFi
   Serial.println();
   Serial.print("Connecting to...");
   Serial.println(ssid);
 
- // WiFi.config(ip,gateway,subnet);
+  //WiFi.config(ip,gateway,subnet);   // Použít statickou IP adresu, config.h | Use static ip address, see config.h
   WiFi.begin(ssid, pass);
 
+  int i = 0;
   while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
+    delay(100);
+    i++;
+    if (i == 10) {
+      i = 0;
+      Serial.println(".");
+    } else Serial.print("."); 
   }
   Serial.println("");
   Serial.println("Wi-Fi connected successfully");
+  timeAwake = millis() - timeAwake;
+  Serial.print("-Time for connecting: ");  Serial.print(timeAwake); Serial.println(" ms");
 }
 
 void setup() {
@@ -372,6 +385,8 @@ void setup() {
 
   // turns off generation of panel driving voltages, avoids screen fading over time
   display.powerOff();
+
+  Serial.print("-Time Awake: ");  Serial.print(millis()); Serial.println(" ms");
 
   // ESP Sleep
   Serial.println("ESP8266 in sleep mode");
