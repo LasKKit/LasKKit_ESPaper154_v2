@@ -32,8 +32,8 @@
 #include <Fonts/FreeMonoBold12pt7b.h>
 
 // select the display class to use, only one
-//GxEPD2_BW<GxEPD2_154 , GxEPD2_154::HEIGHT> display(GxEPD2_154(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEP015OC1 no longer available
-GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEH0154D67
+GxEPD2_BW<GxEPD2_154 , GxEPD2_154::HEIGHT> display(GxEPD2_154(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEP015OC1 no longer available (Waveshare V2)
+//GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEH0154D67
 
 // 3-color e-papers
 //GxEPD2_3C<GxEPD2_154c, GxEPD2_154c::HEIGHT> display(GxEPD2_154c(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4));
@@ -49,7 +49,7 @@ GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS=D8
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-#define DSPIN 4
+#define DSPIN 5
 
 OneWire oneWireDS(DSPIN);
 DallasTemperature dallas(&oneWireDS);
@@ -81,7 +81,8 @@ unsigned int timeAwake;
 
 WiFiUDP ntpUDP;
 // Secify the time server pool and the offset, (+3600 in seconds, GMT +1 hour)
-// additionaly you can specify the update interval (in milliseconds).
+// !!!!!!!!!!!!!!!!!!!!!!TODO WRONG SUMMER TIME (- 1 HOUR)
+// additionaly you can specify the update interval (in milliseconds). 
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
 
 void readChannel(){
@@ -350,7 +351,7 @@ void setup() {
   WiFi.forceSleepBegin();
   delay( 1 );
 
-  Serial.begin(115200);
+  Serial.begin(9600);
   while(!Serial) {} // Wait until serial is ok
   
   display.init(9600); // enable diagnostic output on Serial
