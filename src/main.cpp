@@ -32,7 +32,7 @@
 #include <Fonts/FreeMonoBold12pt7b.h>
 
 // select the display class to use, only one
-GxEPD2_BW<GxEPD2_154 , GxEPD2_154::HEIGHT> display(GxEPD2_154(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEP015OC1 no longer available (Waveshare V2)
+GxEPD2_BW<GxEPD2_154 , GxEPD2_154::HEIGHT> display(GxEPD2_154(/*CS=D8*/ 5, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEP015OC1 no longer available (Waveshare V2)
 //GxEPD2_BW<GxEPD2_154_D67, GxEPD2_154_D67::HEIGHT> display(GxEPD2_154_D67(/*CS=D8*/ SS, /*DC=D3*/ 0, /*RST=D4*/ 2, /*BUSY=D2*/ 4)); // GDEH0154D67
 
 // 3-color e-papers
@@ -49,14 +49,14 @@ GxEPD2_BW<GxEPD2_154 , GxEPD2_154::HEIGHT> display(GxEPD2_154(/*CS=D8*/ SS, /*DC
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-#define DSPIN 5
+#define DSPIN 12
 
 OneWire oneWireDS(DSPIN);
 DallasTemperature dallas(&oneWireDS);
 WiFiClient client;
 
-IPAddress ip(10,0,0,240);       // pick your own IP outside the DHCP range of your router
-IPAddress gateway(10,0,0,138);   // watch out, these are comma's not dots
+IPAddress ip(192,168,100,244);       // pick your own IP outside the DHCP range of your router
+IPAddress gateway(192,168,100,2);   // watch out, these are comma's not dots
 IPAddress subnet(255,255,255,0);
 
 // Konstanty pro vykresleni dlazdic
@@ -100,7 +100,7 @@ void readChannel(){
   Serial.println(humidity);
    //---------------- Channel 4 ----------------//
   m_volt = ThingSpeak.readFloatField(myChannelNumber, 4, myReadAPIKey);
-  m_volt = round(m_volt*10.0)/10.0;
+  m_volt = round(m_volt*100.0)/100.0;     // round to x,xx
   Serial.print("Meteo Battery voltage: ");
   Serial.println(m_volt);
      //---------------- Channel 5 ----------------//
@@ -215,7 +215,11 @@ uint8_t getWifiStrength(){
 }
 
 uint8_t getIntBattery(){
-  // d_volt = analogRead(A0) / 1023.0 * 4.24;
+  d_volt = analogRead(A0);
+  if (d_volt > 0) {
+    d_volt = analogRead(A0) / 1023.0 * 4.24;
+    Serial.println(String(d_volt) + "V");
+  }
 
   // Simple percentage converting
   if (d_volt >= 4.0) return 5;
@@ -326,7 +330,7 @@ void WiFiConnection(){
   Serial.print("Connecting to...");
   Serial.println(ssid);
 
-  //WiFi.config(ip,gateway,subnet);   // Použít statickou IP adresu, config.h | Use static ip address, see config.h
+  //WiFi.config(ip,gateway,subnet);   // Použít statickou IP adresu, config.h | Use static ip address
   WiFi.begin(ssid, pass);
 
   int i = 0;
