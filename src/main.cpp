@@ -40,23 +40,27 @@ GxEPD2_BW<GxEPD2_154 , GxEPD2_154::HEIGHT> display(GxEPD2_154(/*CS=D8*/ 5, /*DC=
 //#define HAS_RED_COLOR
 
 #include <SPI.h>
-#include <OneWire.h>
 #include "ThingSpeak.h"
 #include <ESP8266WiFi.h>
-#include <DallasTemperature.h>
 
 // date and time from NTP
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 
-#define DSPIN 12
+#define USE_DALLAS 0
 
+#if USE_DALLAS
+#include <OneWire.h>
+#include <DallasTemperature.h>
+#define DSPIN 12
 OneWire oneWireDS(DSPIN);
 DallasTemperature dallas(&oneWireDS);
+#endif
+
 WiFiClient client;
 
 IPAddress ip(192,168,100,244);       // pick your own IP outside the DHCP range of your router
-IPAddress gateway(192,168,100,2);   // watch out, these are comma's not dots
+IPAddress gateway(192,168,100,1);   // watch out, these are comma's not dots
 IPAddress subnet(255,255,255,0);
 
 // Konstanty pro vykresleni dlazdic
@@ -216,6 +220,7 @@ uint8_t getWifiStrength(){
 
 uint8_t getIntBattery(){
   d_volt = analogRead(A0);
+  Serial.println(d_volt);
   if (d_volt > 0) {
     d_volt = analogRead(A0) / 1023.0 * 4.24;
     Serial.println(String(d_volt) + "V");
@@ -360,11 +365,17 @@ void setup() {
   
   display.init(9600); // enable diagnostic output on Serial
   
-  // initilizace DS18B20
-  dallas.begin();
-  dallas.requestTemperatures();
-  temp_in = dallas.getTempCByIndex(0); // (x) - pořadí dle unikátní adresy čidel
-  Serial.print("Temp_in: "); Serial.print(temp_in); Serial.println(" °C");
+  #if USE_DALLAS
+    // initilizace DS18B20
+    dallas.begin();
+    dallas.requestTemperatures();
+    temp_in = dallas.getTempCByIndex(0); // (x) - pořadí dle unikátní adresy čidel
+    Serial.print("Temp_in: "); Serial.print(temp_in); Serial.println(" °C");
+  #else
+    temp_in = 0;
+    Serial.print("No dallas was defined");
+  #endif
+
 
   // pripojeni k WiFi
   //Switch Radio back On
